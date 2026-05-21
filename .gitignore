@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.sqlite3
+.env
+.env.*
+pip-wheel-metadata/
+
+# Pipenv
+Pipfile.lock
+
+# Virtualenv
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+
+# macOS
+.DS_Store
+
+# Vite
+.vite/
+
+# Logs
+*.log

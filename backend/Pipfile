@@ -1,0 +1,27 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+django = "*"
+djangorestframework = "*"
+django-cors-headers = "*"
+pandas = "*"
+numpy = "*"
+yfinance = "*"
+celery = "*"
+redis = "*"
+psycopg2-binary = "*"
+ccxt = "*"
+channels = "*"
+daphne = "*"
+websockets = "*"
+django-redis = "*"
+
+[dev-packages]
+black = "*"
+flake8 = "*"
+
+[requires]
+python_version = "3.9"

@@ -1,0 +1,141 @@
+import yfinance as yf
+
+from django.utils import timezone
+
+from .models import TradingBot, Trade
+from .strategy import RiskManagedStrategy
+from .market_data import get_live_price
+
+
+def run_bot(bot_id):
+    bot = TradingBot.objects.get(id=bot_id)
+
+    existing_trade = Trade.objects.filter(
+        bot=bot,
+        symbol=bot.symbol,
+        is_open=True,
+    ).first()
+
+    if existing_trade:
+        return None
+
+    df = yf.download(
+        bot.symbol,
+        period="90d",
+        interval="1h",
+        progress=False,
+    )
+
+    if df.empty:
+        return None
+
+    strategy = RiskManagedStrategy(
+        balance=bot.balance,
+        risk_per_trade=bot.risk_per_trade,
+        reward_ratio=bot.reward_ratio,
+    )
+
+    trade_data = strategy.create_trade(df)
+
+    if not trade_data:
+        return None
+
+    live_entry = get_live_price(bot.symbol)
+
+    if live_entry is not None:
+        trade_data["entry_price"] = live_entry
+
+    trade = Trade.objects.create(
+        bot=bot,
+        symbol=bot.symbol,
+        signal=trade_data["signal"],
+        entry_price=trade_data["entry_price"],
+        current_price=trade_data["entry_price"],
+        stop_loss=trade_data["stop_loss"],
+        take_profit=trade_data["take_profit"],
+        position_size=trade_data["position_size"],
+        risk_amount=trade_data["risk_amount"],
+        pnl=0,
+        pnl_percent=0,
+        is_open=True,
+    )
+
+    return trade
+
+
+def update_open_trades_live_pnl():
+    open_trades = Trade.objects.filter(
+        is_open=True
+    )
+
+    updated_trades = []
+
+    for open_trade in open_trades:
+        current_price = get_live_price(
+            open_trade.symbol
+        )
+
+        if current_price is None:
+            continue
+
+        open_trade.current_price = current_price
+
+        if open_trade.signal == "BUY":
+            open_trade.pnl = (
+                current_price - open_trade.entry_price
+            ) * open_trade.position_size
+
+            open_trade.pnl_percent = (
+                (current_price - open_trade.entry_price)
+                / open_trade.entry_price
+            ) * 100
+
+        elif open_trade.signal == "SELL":
+            open_trade.pnl = (
+                open_trade.entry_price - current_price
+            ) * open_trade.position_size
+
+            open_trade.pnl_percent = (
+                (open_trade.entry_price - current_price)
+                / open_trade.entry_price
+            ) * 100
+
+        bot = open_trade.bot
+
+        if open_trade.pnl >= bot.auto_close_profit_amount:
+            open_trade.is_open = False
+            open_trade.closed_reason = "PROFIT_LOCKED"
+            open_trade.closed_at = timezone.now()
+
+            bot.profit_pot = float(bot.profit_pot) + open_trade.pnl
+            bot.save()
+
+        elif open_trade.pnl <= -bot.auto_close_loss_amount:
+            open_trade.is_open = False
+            open_trade.closed_reason = "MAX_LOSS_STOP"
+            open_trade.closed_at = timezone.now()
+
+        elif open_trade.signal == "BUY" and current_price <= open_trade.stop_loss:
+            open_trade.is_open = False
+            open_trade.closed_reason = "STOP_LOSS"
+            open_trade.closed_at = timezone.now()
+
+        elif open_trade.signal == "BUY" and current_price >= open_trade.take_profit:
+            open_trade.is_open = False
+            open_trade.closed_reason = "TAKE_PROFIT"
+            open_trade.closed_at = timezone.now()
+
+        elif open_trade.signal == "SELL" and current_price >= open_trade.stop_loss:
+            open_trade.is_open = False
+            open_trade.closed_reason = "STOP_LOSS"
+            open_trade.closed_at = timezone.now()
+
+        elif open_trade.signal == "SELL" and current_price <= open_trade.take_profit:
+            open_trade.is_open = False
+            open_trade.closed_reason = "TAKE_PROFIT"
+            open_trade.closed_at = timezone.now()
+
+        open_trade.save()
+        updated_trades.append(open_trade)
+
+    return updated_trades

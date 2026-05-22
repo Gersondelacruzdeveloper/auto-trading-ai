@@ -19,26 +19,70 @@ def run_bot(bot_id):
     if existing_trade:
         return None
 
-    df = yf.download(
-        bot.symbol,
-        period="90d",
-        interval="1h",
-        progress=False,
-    )
-
-    if df.empty:
-        return None
-
     strategy = RiskManagedStrategy(
         balance=bot.balance,
         risk_per_trade=bot.risk_per_trade,
         reward_ratio=bot.reward_ratio,
     )
 
-    trade_data = strategy.create_trade(df)
+    df_15m = yf.download(
+        bot.symbol,
+        period="30d",
+        interval="15m",
+        progress=False,
+    )
+
+    df_1h = yf.download(
+        bot.symbol,
+        period="90d",
+        interval="1h",
+        progress=False,
+    )
+
+    df_4h = yf.download(
+        bot.symbol,
+        period="180d",
+        interval="4h",
+        progress=False,
+    )
+
+    if df_15m.empty or df_1h.empty or df_4h.empty:
+        return None
+
+    signal_15m = strategy.get_signal_from_df(df_15m)
+    signal_1h = strategy.get_signal_from_df(df_1h)
+    signal_4h = strategy.get_signal_from_df(df_4h)
+
+    signals = [
+        signal_15m,
+        signal_1h,
+        signal_4h,
+    ]
+
+    print(
+        bot.symbol,
+        {
+            "15m": signal_15m,
+            "1h": signal_1h,
+            "4h": signal_4h,
+        }
+    )
+
+    if signals.count("BUY") == 2:
+        final_signal = "BUY"
+    elif signals.count("SELL") == 2:
+        final_signal = "SELL"
+    else:
+        return None
+
+    trade_data = strategy.create_trade(
+    df_15m,
+    forced_signal=final_signal
+)
 
     if not trade_data:
         return None
+
 
     live_entry = get_live_price(bot.symbol)
 
@@ -61,7 +105,6 @@ def run_bot(bot_id):
     )
 
     return trade
-
 
 def update_open_trades_live_pnl():
     open_trades = Trade.objects.filter(

@@ -74,3 +74,27 @@ class Trade(models.Model):
 
     def __str__(self):
         return f"{self.symbol} {self.signal}"
+    
+class BacktestResult(models.Model):
+    symbol = models.CharField(max_length=50)
+
+    timeframe = models.CharField(max_length=20)
+
+    total_trades = models.IntegerField(default=0)
+
+    wins = models.IntegerField(default=0)
+
+    losses = models.IntegerField(default=0)
+
+    win_rate = models.FloatField(default=0)
+
+    total_pnl = models.FloatField(default=0)
+
+    max_drawdown = models.FloatField(default=0)
+
+    profit_factor = models.FloatField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.symbol} - {self.timeframe}"

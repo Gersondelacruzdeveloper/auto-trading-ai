@@ -24,12 +24,12 @@ class Command(BaseCommand):
                 symbol=symbol,
                 defaults={
                     "name": f"Bot - {symbol}",
-                    "balance": 1000000,
+                    "balance": 1000,
                     "risk_per_trade": 0.005,
                     "reward_ratio": 3,
                     "is_active": True,
-                    "auto_close_profit_amount": 500,
-                    "auto_close_loss_amount": 500,
+                    "auto_close_profit_amount": 5,
+                   "auto_close_loss_amount": 3,
                 },
             )
 

@@ -35,21 +35,28 @@ export default function App() {
     }
   };
 
-  const runBot = async (botId: number) => {
-    try {
-      setLoading(true);
+const runBot = async (botId: number) => {
+  try {
+    setLoading(true);
 
-      await api.post(`/bots/${botId}/run/`);
+    const response = await api.post(`/bots/${botId}/run/`);
 
-      await loadData();
-    } catch (error) {
-      console.error(error);
+    console.log("RUN BOT RESPONSE:", response.data);
 
-      setMessage("Bot failed to run.");
-    } finally {
-      setLoading(false);
+    if (response.data?.message) {
+      setMessage(response.data.message);
+    } else {
+      setMessage("Trade created successfully.");
     }
-  };
+
+    await loadData();
+  } catch (error) {
+    console.error("RUN BOT ERROR:", error);
+    setMessage("Bot failed to run. Check backend terminal.");
+  } finally {
+    setLoading(false);
+  }
+};
 useEffect(() => {
   loadData();
 

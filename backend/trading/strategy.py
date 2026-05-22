@@ -2,7 +2,6 @@ import pandas as pd
 
 
 class RiskManagedStrategy:
-
     def __init__(
         self,
         balance,
@@ -17,11 +16,7 @@ class RiskManagedStrategy:
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        df = df.copy()
-
-        df = df.dropna()
-
-        return df
+        return df.copy().dropna()
 
     def calculate_atr(self, df, period=14):
         high = df["High"].astype(float)
@@ -34,10 +29,27 @@ class RiskManagedStrategy:
 
         true_range = pd.concat(
             [high_low, high_close, low_close],
-            axis=1
+            axis=1,
         ).max(axis=1)
 
         return true_range.rolling(period).mean()
+
+    def calculate_rsi(self, df, period=14):
+        close = df["Close"].astype(float)
+
+        delta = close.diff()
+
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+
+        avg_gain = gain.rolling(period).mean()
+        avg_loss = loss.rolling(period).mean()
+
+        rs = avg_gain / avg_loss
+
+        rsi = 100 - (100 / (1 + rs))
+
+        return rsi
 
     def add_indicators(self, df):
         df = self.clean_dataframe(df)
@@ -45,12 +57,22 @@ class RiskManagedStrategy:
         df["ema_20"] = df["Close"].astype(float).ewm(span=20).mean()
         df["ema_50"] = df["Close"].astype(float).ewm(span=50).mean()
         df["atr"] = self.calculate_atr(df)
+        df["rsi"] = self.calculate_rsi(df)
+
+        df["distance_from_ema_20"] = (
+            (df["Close"] - df["ema_20"]) / df["ema_20"]
+        ) * 100
 
         df = df.dropna()
 
         return df
 
-    def signal(self, df):
+    def get_signal_from_df(self, df):
+        df = self.add_indicators(df)
+
+        if df.empty:
+            return "HOLD"
+
         last = df.iloc[-1]
 
         ema_20 = float(last["ema_20"])
@@ -64,6 +86,51 @@ class RiskManagedStrategy:
 
         return "HOLD"
 
+    def passes_quality_filter(self, df, signal):
+        df = self.add_indicators(df)
+
+        if df.empty:
+            return False
+
+        last = df.iloc[-1]
+
+        rsi = float(last["rsi"])
+        atr = float(last["atr"])
+        close = float(last["Close"])
+        ema_20 = float(last["ema_20"])
+        distance = abs(float(last["distance_from_ema_20"]))
+
+        if atr <= 0:
+            return False
+
+        # Avoid buying when already overbought
+        if signal == "BUY" and rsi > 70:
+            return False
+
+        # Avoid selling when already oversold
+        if signal == "SELL" and rsi < 30:
+            return False
+
+        # Avoid chasing price too far from EMA
+        if distance > 1.2:
+            return False
+
+        # Avoid dead/flat markets
+        atr_percent = (atr / close) * 100
+
+        if atr_percent < 0.05:
+            return False
+
+        # BUY should be above EMA 20
+        if signal == "BUY" and close < ema_20:
+            return False
+
+        # SELL should be below EMA 20
+        if signal == "SELL" and close > ema_20:
+            return False
+
+        return True
+
     def calculate_position_size(self, entry_price, stop_loss):
         risk_amount = self.balance * self.risk_per_trade
         risk_per_unit = abs(entry_price - stop_loss)
@@ -73,7 +140,7 @@ class RiskManagedStrategy:
 
         return risk_amount / risk_per_unit
 
-    def create_trade(self, df):
+    def create_trade(self, df, forced_signal=None):
         df = self.add_indicators(df)
 
         if df.empty:
@@ -81,9 +148,12 @@ class RiskManagedStrategy:
 
         last = df.iloc[-1]
 
-        signal = self.signal(df)
+        signal = forced_signal or self.get_signal_from_df(df)
 
         if signal == "HOLD":
+            return None
+
+        if not self.passes_quality_filter(df, signal):
             return None
 
         entry = float(last["Close"])
@@ -102,7 +172,7 @@ class RiskManagedStrategy:
 
         size = self.calculate_position_size(
             entry,
-            stop_loss
+            stop_loss,
         )
 
         return {
